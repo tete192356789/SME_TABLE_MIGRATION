@@ -1,0 +1,16 @@
+{"timestamp":"2025-11-26T06:34:23.043842Z","level":"info","event":"DAG bundles loaded: dags-folder, example_dags","logger":"airflow.dag_processing.bundles.manager.DagBundlesManager","filename":"manager.py","lineno":179}
+{"timestamp":"2025-11-26T06:34:23.044077Z","level":"info","event":"Filling up the DagBag from /opt/airflow/dags/mydag.py","logger":"airflow.models.dagbag.DagBag","filename":"dagbag.py","lineno":593}
+{"timestamp":"2025-11-26T06:34:23.067603Z","level":"info","event":"Task instance is in running state","logger":"task.stdout"}
+{"timestamp":"2025-11-26T06:34:23.067753Z","level":"info","event":" Previous state of the Task instance: TaskInstanceState.QUEUED","logger":"task.stdout"}
+{"timestamp":"2025-11-26T06:34:23.067844Z","level":"info","event":"Current task name:compare_date","logger":"task.stdout"}
+{"timestamp":"2025-11-26T06:34:23.067937Z","level":"info","event":"Dag name:date_comparison_dag","logger":"task.stdout"}
+{"timestamp":"2025-11-26T06:34:23.071245Z","level":"info","event":"source dt : 2025-11-26T13:18:58.974349","logger":"unusual_prefix_e26401d9ee27aeaa050d66a6d7a61bfc3a6f7f19_mydag","filename":"mydag.py","lineno":95}
+{"timestamp":"2025-11-26T06:34:23.071299Z","level":"info","event":"sink dt : 2025-11-26T13:18:58.974349","logger":"unusual_prefix_e26401d9ee27aeaa050d66a6d7a61bfc3a6f7f19_mydag","filename":"mydag.py","lineno":96}
+{"timestamp":"2025-11-26T06:34:23.071339Z","level":"info","event":"Done. Returned value was: not_update_task","logger":"airflow.task.operators.airflow.providers.standard.decorators.branch_python._BranchPythonDecoratedOperator","filename":"python.py","lineno":215}
+{"timestamp":"2025-11-26T06:34:23.071368Z","level":"info","event":"Branch into not_update_task","logger":"airflow.task.operators.airflow.providers.standard.decorators.branch_python._BranchPythonDecoratedOperator","filename":"branch.py","lineno":44}
+{"timestamp":"2025-11-26T06:34:23.071709Z","level":"info","event":"Following branch {'not_update_task'}","logger":"airflow.task.operators.airflow.providers.standard.decorators.branch_python._BranchPythonDecoratedOperator","filename":"skipmixin.py","lineno":146}
+{"timestamp":"2025-11-26T06:34:23.071867Z","level":"info","event":"Skipping tasks [('update_task', -1)]","logger":"airflow.task.operators.airflow.providers.standard.decorators.branch_python._BranchPythonDecoratedOperator","filename":"skipmixin.py","lineno":185}
+{"timestamp":"2025-11-26T06:34:23.075770Z","level":"info","event":"Skipping downstream tasks.","logger":"task","filename":"task_runner.py","lineno":943}
+{"timestamp":"2025-11-26T06:34:23.084654Z","level":"info","event":"Task instance in success state","logger":"task.stdout"}
+{"timestamp":"2025-11-26T06:34:23.087505Z","level":"info","event":" Previous state of the Task instance: TaskInstanceState.RUNNING","logger":"task.stdout"}
+{"timestamp":"2025-11-26T06:34:23.087606Z","level":"info","event":"Task operator:<Task(_BranchPythonDecoratedOperator): compare_date>","logger":"task.stdout"}

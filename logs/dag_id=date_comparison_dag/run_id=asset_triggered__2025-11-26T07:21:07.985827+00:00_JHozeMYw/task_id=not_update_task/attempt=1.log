@@ -1,0 +1,11 @@
+{"timestamp":"2025-11-26T07:21:11.252763Z","level":"info","event":"DAG bundles loaded: dags-folder, example_dags","logger":"airflow.dag_processing.bundles.manager.DagBundlesManager","filename":"manager.py","lineno":179}
+{"timestamp":"2025-11-26T07:21:11.252992Z","level":"info","event":"Filling up the DagBag from /opt/airflow/dags/mydag.py","logger":"airflow.models.dagbag.DagBag","filename":"dagbag.py","lineno":593}
+{"timestamp":"2025-11-26T07:21:11.278692Z","level":"info","event":"Task instance is in running state","logger":"task.stdout"}
+{"timestamp":"2025-11-26T07:21:11.279527Z","level":"info","event":" Previous state of the Task instance: TaskInstanceState.QUEUED","logger":"task.stdout"}
+{"timestamp":"2025-11-26T07:21:11.279603Z","level":"info","event":"Current task name:not_update_task","logger":"task.stdout"}
+{"timestamp":"2025-11-26T07:21:11.279650Z","level":"info","event":"Dag name:date_comparison_dag","logger":"task.stdout"}
+{"timestamp":"2025-11-26T07:21:11.279016Z","level":"info","event":"Updating not_update_asset !!!","logger":"unusual_prefix_e26401d9ee27aeaa050d66a6d7a61bfc3a6f7f19_mydag","filename":"mydag.py","lineno":109}
+{"timestamp":"2025-11-26T07:21:11.279332Z","level":"info","event":"Done. Returned value was: None","logger":"airflow.task.operators.airflow.providers.standard.decorators.python._PythonDecoratedOperator","filename":"python.py","lineno":215}
+{"timestamp":"2025-11-26T07:21:11.288471Z","level":"info","event":"Task instance in success state","logger":"task.stdout"}
+{"timestamp":"2025-11-26T07:21:11.290446Z","level":"info","event":" Previous state of the Task instance: TaskInstanceState.RUNNING","logger":"task.stdout"}
+{"timestamp":"2025-11-26T07:21:11.290870Z","level":"info","event":"Task operator:<Task(_PythonDecoratedOperator): not_update_task>","logger":"task.stdout"}

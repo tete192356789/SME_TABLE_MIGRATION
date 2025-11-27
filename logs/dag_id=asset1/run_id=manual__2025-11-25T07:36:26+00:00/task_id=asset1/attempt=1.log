@@ -1,0 +1,18 @@
+{"timestamp":"2025-11-25T07:36:30.034904Z","level":"info","event":"DAG bundles loaded: dags-folder, example_dags","logger":"airflow.dag_processing.bundles.manager.DagBundlesManager","filename":"manager.py","lineno":179}
+{"timestamp":"2025-11-25T07:36:30.035754Z","level":"info","event":"Filling up the DagBag from /opt/airflow/dags/mydag.py","logger":"airflow.models.dagbag.DagBag","filename":"dagbag.py","lineno":593}
+{"timestamp":"2025-11-25T07:36:30.112465Z","level":"info","event":"Task instance is in running state","logger":"task.stdout"}
+{"timestamp":"2025-11-25T07:36:30.115434Z","level":"info","event":" Previous state of the Task instance: TaskInstanceState.QUEUED","logger":"task.stdout"}
+{"timestamp":"2025-11-25T07:36:30.115508Z","level":"info","event":"Current task name:asset1","logger":"task.stdout"}
+{"timestamp":"2025-11-25T07:36:30.115564Z","level":"info","event":"Dag name:asset1","logger":"task.stdout"}
+{"timestamp":"2025-11-25T07:36:30.115616Z","level":"info","event":"dev","logger":"task.stdout"}
+{"timestamp":"2025-11-25T07:36:30.115666Z","level":"info","event":"MY_POSTGRES_DEV","logger":"task.stdout"}
+{"timestamp":"2025-11-25T07:36:30.109686Z","level":"info","event":"Getting Max Updated Date From Source Table.","logger":"unusual_prefix_e26401d9ee27aeaa050d66a6d7a61bfc3a6f7f19_mydag","filename":"mydag.py","lineno":19}
+{"timestamp":"2025-11-25T07:36:30.154245Z","level":"warning","event":"empty cryptography key - values will not be stored encrypted.","logger":"airflow.models.crypto","filename":"crypto.py","lineno":82}
+{"timestamp":"2025-11-25T07:36:30.581458Z","level":"info","event":"Running statement: SELECT MAX(updated_date) FROM source_table;, parameters: None","logger":"airflow.task.hooks.airflow.providers.***.hooks.***.PostgresHook","filename":"sql.py","lineno":810}
+{"timestamp":"2025-11-25T07:36:30.595775Z","level":"info","event":"Rows affected: 1","logger":"airflow.task.hooks.airflow.providers.***.hooks.***.PostgresHook","filename":"sql.py","lineno":822}
+{"timestamp":"2025-11-25T07:36:30.602186Z","level":"info","event":"Source Table Max Updated Date: 2025-11-24 09:40:48.674785","logger":"unusual_prefix_e26401d9ee27aeaa050d66a6d7a61bfc3a6f7f19_mydag","filename":"mydag.py","lineno":21}
+{"timestamp":"2025-11-25T07:36:30.602708Z","level":"info","event":"Done. Returned value was: [(datetime.datetime(2025, 11, 24, 9, 40, 48, 674785),)]","logger":"airflow.task.operators.airflow.sdk.definitions.asset.decorators._AssetMainOperator","filename":"python.py","lineno":215}
+{"timestamp":"2025-11-25T07:36:30.602995Z","level":"info","event":"Pushing xcom","ti":"RuntimeTaskInstance(id=UUID('019ab9f1-4266-7369-9b4a-178703169334'), task_id='asset1', dag_id='asset1', run_id='manual__2025-11-25T07:36:26+00:00', try_number=1, dag_version_id=UUID('019ab9e6-3f89-7864-9f03-34714c712540'), map_index=-1, hostname='73a6cc8621f3', context_carrier={}, task=<Task(_AssetMainOperator): asset1>, bundle_instance=LocalDagBundle(name=dags-folder), max_tries=0, start_date=datetime.datetime(2025, 11, 25, 7, 36, 28, 542750, tzinfo=datetime.timezone.utc), end_date=None, state=<TaskInstanceState.RUNNING: 'running'>, is_mapped=False, rendered_map_index=None)","logger":"task","filename":"task_runner.py","lineno":1360}
+{"timestamp":"2025-11-25T07:36:30.672346Z","level":"info","event":"Task instance in success state","logger":"task.stdout"}
+{"timestamp":"2025-11-25T07:36:30.674611Z","level":"info","event":" Previous state of the Task instance: TaskInstanceState.RUNNING","logger":"task.stdout"}
+{"timestamp":"2025-11-25T07:36:30.678693Z","level":"info","event":"Task operator:<Task(_AssetMainOperator): asset1>","logger":"task.stdout"}

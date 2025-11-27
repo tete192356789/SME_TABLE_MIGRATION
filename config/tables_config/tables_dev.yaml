@@ -1,0 +1,24 @@
+database:
+  connection_id: postgres_dev
+  
+tables:
+  source_table:
+    - name: source_table
+      sink_table: sink_table
+      primary_key: id
+      updated_column: updated_at
+      airflow_asset_name: source_table_trigger_asset
+
+  source_table2:
+    - name: source_table2
+      sink_table: sink_table2
+      primary_key: id
+      updated_column: updated_at
+      airflow_asset_name: source_table2_trigger_asset
+
+  source_table3:
+    - name: source_table3
+      sink_table: sink_table3
+      primary_key: id
+      updated_column: updated_at
+      airflow_asset_name: source_table3_trigger_asset
