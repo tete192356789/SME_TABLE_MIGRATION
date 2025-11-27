@@ -1,3 +1,5 @@
-/config/env_config/*
+/config/env_config/.env.dev
+/config/env_config/.env.test
+/config/env_config/.env.prod
 .env
 /logs
