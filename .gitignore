@@ -2,4 +2,5 @@
 /config/env_config/.env.test
 /config/env_config/.env.prod
 .env
-/logs
+/logs/*
+*.log
