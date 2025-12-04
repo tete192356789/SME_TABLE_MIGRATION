@@ -7,6 +7,7 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.sdk import Asset, dag, task
 
 from config.env_var import conf_settings
+from include.logging.error_handle import _log_error_to_audit_table
 
 logger = logging.getLogger(__name__)
 
@@ -19,32 +20,36 @@ def incremental_update():
         sink_hook = PostgresHook(postgres_conn_id="sink_postgres")
         sink_conn = sink_hook.get_conn()
         sink_cursor = sink_conn.cursor()
+        try:
+            create_table_query = """
+            CREATE TABLE IF NOT EXISTS migration_audit (
+                id SERIAL PRIMARY KEY,
+                dag_id VARCHAR(255),
+                run_id VARCHAR(255),
+                status VARCHAR(255),
+                start_date TIMESTAMP,
+                end_date TIMESTAMP,
+                source_table VARCHAR(255),
+                sink_table VARCHAR(255),
+                source_count BIGINT,
+                updated_count BIGINT,
+                inserted_count BIGINT,
+                sink_count_before BIGINT,
+                sink_count_after BIGINT,
+                duration_seconds INT,
+                err_task_id VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+            logger.info("Audit table created/verified")
 
-        create_table_query = """
-        CREATE TABLE IF NOT EXISTS migration_audit (
-            id SERIAL PRIMARY KEY,
-            dag_id VARCHAR(255),
-            run_id VARCHAR(255),
-            start_date TIMESTAMP,
-            end_date TIMESTAMP,
-            source_table VARCHAR(255),
-            sink_table VARCHAR(255),
-            source_count BIGINT,
-            updated_count BIGINT,
-            inserted_count BIGINT,
-            sink_count_before BIGINT,
-            sink_count_after BIGINT,
-            duration_seconds INT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """
-
-        sink_cursor.execute(create_table_query)
-        sink_conn.commit()
-        sink_cursor.close()
-        sink_conn.close()
-        logger.info("Audit table created/verified")
-        logger.info(context)
+        except Exception as e:
+            logger.error(f"Failed to create audit table: {e}")
+        finally:
+            sink_cursor.execute(create_table_query)
+            sink_conn.commit()
+            sink_cursor.close()
+            sink_conn.close()
 
     @task
     def init_audit_log(**context):
@@ -69,9 +74,9 @@ def incremental_update():
 
         insert_query = """
         INSERT INTO migration_audit (
-            dag_id, run_id, start_date, source_table, sink_table
+            dag_id, run_id, start_date, source_table, sink_table,status
             
-        ) VALUES (%s, %s, %s, %s, %s)
+        ) VALUES (%s, %s, %s, %s, %s,%s)
         RETURNING id;
         """
 
@@ -83,6 +88,7 @@ def incremental_update():
                 execution_date.isoformat(),
                 table_config["name"],
                 table_config["sink_table"],
+                "RUNNING",
             ),
         )
 
@@ -105,13 +111,25 @@ def incremental_update():
         )[-1][-1]
 
         source_hook = PostgresHook(postgres_conn_id="source_postgres")
-        count_query = f"SELECT COUNT(*) FROM {table_config['name']}"
 
-        result = source_hook.get_records(count_query)
-        source_count = result[0][0]
+        try:
+            count_query = f"SELECT COUNT(*) FROM {table_config['name']}"
 
-        logger.info(f"Source Table Rows Count: {source_count}")
-        return source_count
+            result = source_hook.get_records(count_query)
+            source_count = result[0][0]
+
+            logger.info(f"Source Table Rows Count: {source_count}")
+            return source_count
+        except Exception as e:
+            logger.error(
+                f"Failed to get source count from  {table_config['name']}: {e}"
+            )
+
+            audit_id = context["ti"].xcom_pull(
+                task_ids="init_audit_log", key="return_value", include_prior_dates=True
+            )[-1]
+            _log_error_to_audit_table(audit_id=audit_id, task_id=context["ti"].task_id)
+            raise
 
     @task
     def read_sink_ddl_query(**context):
@@ -151,27 +169,37 @@ def incremental_update():
         ddl_query_format = ddl_query.format(
             FULL_TABLE_NAME=f"staging.{table_config['sink_table']}"
         )
-        sink_cursor.execute("CREATE SCHEMA IF NOT EXISTS staging")
+        try:
+            sink_cursor.execute("CREATE SCHEMA IF NOT EXISTS staging")
 
-        logger.info("CHECK TABLE EXIST OR NOT.")
-        sink_cursor.execute(
-            f"""    
-        SELECT EXISTS (
-        SELECT 1 FROM information_schema.tables 
-        WHERE table_schema = 'staging'
-        AND table_name = '{table_config["sink_table"]}'
-        )   
-        """,
-        )
-        table_exist = sink_cursor.fetchone()[-1]
-        if not table_exist:
-            logger.info("TABLE DID NOT EXIST, CREATING ...")
+            logger.info("CHECK TABLE EXIST OR NOT.")
+            sink_cursor.execute(
+                f"""    
+            SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'staging'
+            AND table_name = '{table_config["sink_table"]}'
+            )   
+            """,
+            )
+            table_exist = sink_cursor.fetchone()[-1]
+            if not table_exist:
+                logger.info("TABLE DID NOT EXIST, CREATING ...")
+                sink_cursor.execute(ddl_query_format)
+
             sink_cursor.execute(ddl_query_format)
+        except Exception as e:
+            logger.info(f"Failed to check staging sink exist: {e}")
+            audit_id = context["ti"].xcom_pull(
+                task_ids="init_audit_log", key="return_value", include_prior_dates=True
+            )[-1]
+            _log_error_to_audit_table(audit_id=audit_id, task_id=context["ti"].task_id)
+            raise
 
-        sink_cursor.execute(ddl_query_format)
-        sink_conn.commit()
-        sink_cursor.close()
-        sink_conn.close()
+        finally:
+            sink_conn.commit()
+            sink_cursor.close()
+            sink_conn.close()
 
     @task
     def get_source_query(
@@ -243,6 +271,10 @@ def incremental_update():
             )
         except Exception as e:
             logger.error(f"Truncate Staging Table Failed: {e}")
+            audit_id = context["ti"].xcom_pull(
+                task_ids="init_audit_log", key="return_value", include_prior_dates=True
+            )[-1]
+            _log_error_to_audit_table(audit_id=audit_id, task_id=context["ti"].task_id)
             raise
 
         sink_cursor.execute(
@@ -279,6 +311,10 @@ def incremental_update():
                 )
         except Exception as e:
             logger.error(f"Failed to load data to staging: {e}")
+            audit_id = context["ti"].xcom_pull(
+                task_ids="init_audit_log", key="return_value", include_prior_dates=True
+            )[-1]
+            _log_error_to_audit_table(audit_id=audit_id, task_id=context["ti"].task_id)
             raise
         finally:
             sink_conn.commit()
@@ -300,12 +336,20 @@ def incremental_update():
         )[-1][-1]
 
         sink_hook = PostgresHook(postgres_conn_id="sink_postgres")
-        result = sink_hook.get_records(
-            f"SELECT COUNT(*) FROM {table_config['sink_table']}"
-        )
-        sink_count_before = result[0][0]
-        logger.info(f"Sink count before upsert: {sink_count_before}")
-        return sink_count_before
+        try:
+            result = sink_hook.get_records(
+                f"SELECT COUNT(*) FROM {table_config['sink_table']}"
+            )
+            sink_count_before = result[0][0]
+            logger.info(f"Sink count before upsert: {sink_count_before}")
+            return sink_count_before
+        except Exception as e:
+            logger.info(f"Failed to get sink count before : {e}")
+            audit_id = context["ti"].xcom_pull(
+                task_ids="init_audit_log", key="return_value", include_prior_dates=True
+            )[-1]
+            _log_error_to_audit_table(audit_id=audit_id, task_id=context["ti"].task_id)
+            raise
 
     @task
     def get_sink_count_after(**context):
@@ -318,12 +362,20 @@ def incremental_update():
         )[-1][-1]
 
         sink_hook = PostgresHook(postgres_conn_id="sink_postgres")
-        result = sink_hook.get_records(
-            f"SELECT COUNT(*) FROM {table_config['sink_table']}"
-        )
-        sink_count_after = result[0][0]
-        logger.info(f"Sink count after upsert: {sink_count_after}")
-        return sink_count_after
+        try:
+            result = sink_hook.get_records(
+                f"SELECT COUNT(*) FROM {table_config['sink_table']}"
+            )
+            sink_count_after = result[0][0]
+            logger.info(f"Sink count after upsert: {sink_count_after}")
+            return sink_count_after
+        except Exception as e:
+            logger.info(f"Failed to get sink count after: {e}")
+            audit_id = context["ti"].xcom_pull(
+                task_ids="init_audit_log", key="return_value", include_prior_dates=True
+            )[-1]
+            _log_error_to_audit_table(audit_id=audit_id, task_id=context["ti"].task_id)
+            raise
 
     @task
     def get_sink_staging_count(**context):
@@ -336,12 +388,20 @@ def incremental_update():
         )[-1][-1]
 
         sink_hook = PostgresHook(postgres_conn_id="sink_postgres")
-        result = sink_hook.get_records(
-            f"SELECT COUNT(*) FROM staging.{table_config['sink_table']}"
-        )
-        sink_staging_count = result[0][0]
-        logger.info(f"Staging Sink count upsert: {sink_staging_count}")
-        return sink_staging_count
+        try:
+            result = sink_hook.get_records(
+                f"SELECT COUNT(*) FROM staging.{table_config['sink_table']}"
+            )
+            sink_staging_count = result[0][0]
+            logger.info(f"Staging Sink count upsert: {sink_staging_count}")
+            return sink_staging_count
+        except Exception as e:
+            logger.info(f"Failed to get sink staging count: {e}")
+            audit_id = context["ti"].xcom_pull(
+                task_ids="init_audit_log", key="return_value", include_prior_dates=True
+            )[-1]
+            _log_error_to_audit_table(audit_id=audit_id, task_id=context["ti"].task_id)
+            raise
 
     @task
     def load_staging_to_sink(**context):
@@ -400,6 +460,10 @@ def incremental_update():
             logger.info(upsert_query)
         except Exception as e:
             logger.error(f"Failed to load data to staging: {e}")
+            audit_id = context["ti"].xcom_pull(
+                task_ids="init_audit_log", key="return_value", include_prior_dates=True
+            )[-1]
+            _log_error_to_audit_table(audit_id=audit_id, task_id=context["ti"].task_id)
             raise
         finally:
             sink_conn.commit()
@@ -463,6 +527,7 @@ def incremental_update():
             source_count = %s,
             updated_count = %s,
             inserted_count = %s,
+            status = %s,
             sink_count_before = %s,
             sink_count_after = %s,
             end_date = %s,
@@ -476,6 +541,7 @@ def incremental_update():
                 source_count,
                 updated_count,
                 inserted_count,
+                "SUCCESS",
                 sink_before,
                 sink_after,
                 end_date,

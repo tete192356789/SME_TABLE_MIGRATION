@@ -30,6 +30,7 @@ def main_migration_dag():
     def get_table_name_from_triggered_asset(**context):
         triggering_events = context.get("triggering_asset_events")
         logger.info(triggering_events._events)
+        logger.info(f"STR : {context['ti'].task_id}")
 
         for asset_key, events in triggering_events._events.items():
             for event in events:
