@@ -1,2 +1,3 @@
 apache-airflow-providers-postgres
 pandas
+pydantic-settings
