@@ -2,8 +2,9 @@ import datetime
 import importlib
 import logging
 
+import numpy as np
 import pandas as pd
-from airflow.providers.postgres.hooks.postgres import PostgresHook
+from airflow.providers.mysql.hooks.mysql import MySqlHook
 from airflow.sdk import Asset, dag, task
 
 from config.env_var import conf_settings
@@ -17,36 +18,25 @@ def incremental_update():
     @task
     def create_audit_table(**context):
         """Create audit table if not exists"""
-        sink_hook = PostgresHook(postgres_conn_id="sink_postgres")
+        sink_hook = MySqlHook(mysql_conn_id="sink_conn")
         sink_conn = sink_hook.get_conn()
         sink_cursor = sink_conn.cursor()
         try:
-            create_table_query = """
-            CREATE TABLE IF NOT EXISTS migration_audit (
-                id SERIAL PRIMARY KEY,
-                dag_id VARCHAR(255),
-                run_id VARCHAR(255),
-                status VARCHAR(255),
-                start_date TIMESTAMP,
-                end_date TIMESTAMP,
-                source_table VARCHAR(255),
-                sink_table VARCHAR(255),
-                source_count BIGINT,
-                updated_count BIGINT,
-                inserted_count BIGINT,
-                sink_count_before BIGINT,
-                sink_count_after BIGINT,
-                duration_seconds INT,
-                err_task_id VARCHAR(255),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            """
+            sql_ddl_path = conf_settings.general_config_sql_ddl_path
+            if "/" in sql_ddl_path:
+                sql_ddl_path = sql_ddl_path.strip("/").replace("/", ".")
+            create_table_query = importlib.import_module(
+                f"{sql_ddl_path}.{conf_settings.log_table_name}"
+            ).QUERY
+
             logger.info("Audit table created/verified")
 
         except Exception as e:
             logger.error(f"Failed to create audit table: {e}")
         finally:
-            sink_cursor.execute(create_table_query)
+            sink_cursor.execute(
+                create_table_query.format(LOG_TABLE_NAME=conf_settings.log_table_name)
+            )
             sink_conn.commit()
             sink_cursor.close()
             sink_conn.close()
@@ -60,43 +50,35 @@ def incremental_update():
             key="table_config",
             include_prior_dates=True,
         )[-1][-1]
-
         execution_date = context["ti"].xcom_pull(
             dag_id="main_migration_dag",
             task_ids="get_table_name_from_triggered_asset",
             key="execution_date",
             include_prior_dates=True,
         )[-1]
-
-        sink_hook = PostgresHook(postgres_conn_id="sink_postgres")
+        sink_hook = MySqlHook(mysql_conn_id="sink_conn")
         sink_conn = sink_hook.get_conn()
         sink_cursor = sink_conn.cursor()
-
         insert_query = """
         INSERT INTO migration_audit (
-            dag_id, run_id, start_date, source_table, sink_table,status
-            
-        ) VALUES (%s, %s, %s, %s, %s,%s)
-        RETURNING id;
+            dag_id, run_id, start_date, source_table, sink_table, status
+        ) VALUES (%s, %s, %s, %s, %s, %s)
         """
-
         sink_cursor.execute(
             insert_query,
             (
                 context["dag"].dag_id,
                 context["run_id"],
-                execution_date.isoformat(),
+                execution_date,
                 table_config["name"],
                 table_config["sink_table"],
                 "RUNNING",
             ),
         )
-
-        audit_id = sink_cursor.fetchone()[0]
+        audit_id = sink_cursor.lastrowid  # MySQL way to get last inserted ID
         sink_conn.commit()
         sink_cursor.close()
         sink_conn.close()
-
         logger.info(f"Audit log initialized with ID: {audit_id}")
         return audit_id
 
@@ -110,7 +92,7 @@ def incremental_update():
             include_prior_dates=True,
         )[-1][-1]
 
-        source_hook = PostgresHook(postgres_conn_id="source_postgres")
+        source_hook = MySqlHook(mysql_conn_id="source_conn")
 
         try:
             count_query = f"SELECT COUNT(*) FROM {table_config['name']}"
@@ -150,7 +132,7 @@ def incremental_update():
 
     @task
     def check_sink_staging_exist(**context):
-        sink_conn = PostgresHook(postgres_conn_id="sink_postgres").get_conn()
+        sink_conn = MySqlHook(mysql_conn_id="sink_conn").get_conn()
         sink_cursor = sink_conn.cursor()
 
         table_config = context["ti"].xcom_pull(
@@ -167,7 +149,7 @@ def incremental_update():
         )[-1]
 
         ddl_query_format = ddl_query.format(
-            FULL_TABLE_NAME=f"staging.{table_config['sink_table']}"
+            FULL_TABLE_NAME=f"staging_{table_config['sink_table']}"
         )
         try:
             sink_cursor.execute("CREATE SCHEMA IF NOT EXISTS staging")
@@ -241,7 +223,6 @@ def incremental_update():
             key="table_config",
             include_prior_dates=True,
         )[-1][-1]
-
         query = context["ti"].xcom_pull(
             dag_id="incremental_update",
             task_ids="get_source_query",
@@ -249,25 +230,21 @@ def incremental_update():
             include_prior_dates=True,
         )[-1]
         logger.info(f"QUERY : {query}")
-        source_hook = PostgresHook(postgres_conn_id="source_postgres")
-        sink_hook = PostgresHook(postgres_conn_id="sink_postgres")
-
+        source_hook = MySqlHook(mysql_conn_id="source_conn")
+        sink_hook = MySqlHook(mysql_conn_id="sink_conn")
         # Get raw connection for cursor operations
         sink_conn = sink_hook.get_conn()
         sink_cursor = sink_conn.cursor()
-
         # Get SQLAlchemy engine for pandas
         source_engine = source_hook.get_sqlalchemy_engine()
         sink_engine = sink_hook.get_sqlalchemy_engine()
-
         total_rows = 0
-
         # truncate staging table
         try:
-            sink_cursor.execute(f"TRUNCATE TABLE staging.{table_config['sink_table']}")
+            sink_cursor.execute(f"TRUNCATE TABLE staging_{table_config['sink_table']}")
             sink_conn.commit()
             logger.info(
-                f"Staging table truncated: staging.{table_config['sink_table']}"
+                f"Staging table truncated: staging_{table_config['sink_table']}"
             )
         except Exception as e:
             logger.error(f"Truncate Staging Table Failed: {e}")
@@ -276,38 +253,33 @@ def incremental_update():
             )[-1]
             _log_error_to_audit_table(audit_id=audit_id, task_id=context["ti"].task_id)
             raise
-
         sink_cursor.execute(
-            f"SELECT COUNT(*) FROM staging.{table_config['sink_table']}"
+            f"SELECT COUNT(*) FROM staging_{table_config['sink_table']}"
         )
         count_stg = sink_cursor.fetchone()[0]
-
         if count_stg != 0:
             raise ValueError("Staging Table Didn't Truncate Yet.")
-
         chunksize = (
             table_config["insert_chunk_size"]
             if table_config["insert_chunk_size"]
             else 10000
         )
-
         try:
             # Process in chunks
             for chunk in pd.read_sql(query, source_engine, chunksize=chunksize):
                 if chunk.empty:
                     break
-
                 total_rows += len(chunk)
+                # MySQL: Use full table name with database prefix
                 chunk.to_sql(
-                    name=table_config["sink_table"],
-                    schema="staging",
+                    name=f"staging_{table_config['sink_table']}",
                     con=sink_engine,
                     if_exists="append",
                     method="multi",
                     index=False,
                 )
                 logger.info(
-                    f"Upserting {total_rows} rows Into Staging Sink Table --> (staging.{table_config['sink_table']})!!!"
+                    f"Upserting {total_rows} rows Into Staging Sink Table --> (staging.staging_{table_config['sink_table']})!!!"
                 )
         except Exception as e:
             logger.error(f"Failed to load data to staging: {e}")
@@ -322,7 +294,6 @@ def incremental_update():
             sink_conn.close()
             source_engine.dispose()
             sink_engine.dispose()
-
         return total_rows
 
     @task
@@ -335,7 +306,7 @@ def incremental_update():
             include_prior_dates=True,
         )[-1][-1]
 
-        sink_hook = PostgresHook(postgres_conn_id="sink_postgres")
+        sink_hook = MySqlHook(mysql_conn_id="sink_conn")
         try:
             result = sink_hook.get_records(
                 f"SELECT COUNT(*) FROM {table_config['sink_table']}"
@@ -361,7 +332,7 @@ def incremental_update():
             include_prior_dates=True,
         )[-1][-1]
 
-        sink_hook = PostgresHook(postgres_conn_id="sink_postgres")
+        sink_hook = MySqlHook(mysql_conn_id="sink_conn")
         try:
             result = sink_hook.get_records(
                 f"SELECT COUNT(*) FROM {table_config['sink_table']}"
@@ -387,10 +358,10 @@ def incremental_update():
             include_prior_dates=True,
         )[-1][-1]
 
-        sink_hook = PostgresHook(postgres_conn_id="sink_postgres")
+        sink_hook = MySqlHook(mysql_conn_id="sink_conn")
         try:
             result = sink_hook.get_records(
-                f"SELECT COUNT(*) FROM staging.{table_config['sink_table']}"
+                f"SELECT COUNT(*) FROM staging_{table_config['sink_table']}"
             )
             sink_staging_count = result[0][0]
             logger.info(f"Staging Sink count upsert: {sink_staging_count}")
@@ -411,35 +382,35 @@ def incremental_update():
             key="table_config",
             include_prior_dates=True,
         )[-1][-1]
-
-        query = f"""SELECT * FROM staging.{table_config["sink_table"]}"""
-
-        sink_conn = PostgresHook(postgres_conn_id="sink_postgres").get_conn()
+        query = f"""SELECT * FROM staging_{table_config["sink_table"]}"""
+        sink_conn = MySqlHook(mysql_conn_id="sink_conn").get_conn()
         sink_cursor = sink_conn.cursor()
         total_rows = 0
         primary_key = table_config["primary_key"]
-
         chunksize = (
             table_config["insert_chunk_size"]
             if table_config["insert_chunk_size"]
             else 10000
         )
-
         try:
             # Process in chunks
             for chunk in pd.read_sql(query, sink_conn, chunksize=chunksize):
                 if chunk.empty:
                     break
 
+                chunk = chunk.replace({np.nan: None, pd.NA: None, pd.NaT: None})
                 total_rows += len(chunk)
                 # Get column names
                 columns = chunk.columns.tolist()
                 placeholders = ", ".join(["%s"] * len(columns))
-                columns_str = ", ".join([f'"{col}"' for col in columns])
-                # Build upsert query (PostgreSQL syntax)
+                columns_str = ", ".join(
+                    [f"`{col}`" for col in columns]
+                )  # Changed to backticks
+
+                # Build upsert query (MySQL syntax)
                 update_clause = ", ".join(
                     [
-                        f'"{col}" = EXCLUDED."{col}"'
+                        f"`{col}` = VALUES(`{col}`)"  # Changed from EXCLUDED to VALUES
                         for col in columns
                         if col != primary_key
                     ]
@@ -447,17 +418,18 @@ def incremental_update():
                 upsert_query = f"""
                 INSERT INTO {table_config["sink_table"]} ({columns_str})
                 VALUES ({placeholders})
-                ON CONFLICT ({primary_key}) DO UPDATE
-                SET {update_clause}
+                ON DUPLICATE KEY UPDATE {update_clause}
                 """
+
                 # Execute batch upsert
                 data = [tuple(row) for row in chunk.values]
+                logging.info(upsert_query)
+                logging.info(data)
                 sink_cursor.executemany(upsert_query, data)
                 sink_conn.commit()
             logger.info(
                 f"Upserting {total_rows} rows Into Sink Table --> ({table_config['sink_table']})!!!"
             )
-            logger.info(upsert_query)
         except Exception as e:
             logger.error(f"Failed to load data to staging: {e}")
             audit_id = context["ti"].xcom_pull(
@@ -469,7 +441,6 @@ def incremental_update():
             sink_conn.commit()
             sink_cursor.close()
             sink_conn.close()
-
         return total_rows
 
     @task
@@ -511,7 +482,7 @@ def incremental_update():
         updated_count = sink_staging_count - inserted_count
 
         # Get start time from audit table
-        sink_hook = PostgresHook(postgres_conn_id="sink_postgres")
+        sink_hook = MySqlHook(mysql_conn_id="sink_conn")
         sink_conn = sink_hook.get_conn()
         sink_cursor = sink_conn.cursor()
 

@@ -1,14 +1,14 @@
 import datetime
 import logging
 
-from airflow.providers.postgres.hooks.postgres import PostgresHook
+from airflow.providers.mysql.hooks.mysql import MySqlHook
 
 logger = logging.getLogger(__name__)
 
 
 def _log_error_to_audit_table(audit_id: int, task_id: str):
     """Helper function to log errors to audit table"""
-    sink_hook = PostgresHook(postgres_conn_id="sink_postgres")
+    sink_hook = MySqlHook(mysql_conn_id="sink_conn")
     sink_conn = sink_hook.get_conn()
     sink_cursor = sink_conn.cursor()
 

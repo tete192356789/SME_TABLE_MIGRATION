@@ -7,10 +7,11 @@ airflow_env = os.getenv("AIRFLOW_ENV")
 
 
 class EnvVarsSettings(BaseSettings):
-    airflow_conn_source_postgres: str
-    airflow_conn_sink_postgres: str
+    airflow_conn_source_conn: str
+    airflow_conn_sink_conn: str
     airflow_env: str
     general_config_sql_ddl_path: str
+    log_table_name: str
 
     class Config:
         # env_prefix = "DB_"
