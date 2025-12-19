@@ -1,3 +1,6 @@
-apache-airflow-providers-mysql
-pandas
-pydantic-settings
+
+
+apache-airflow-providers-microsoft-mssql==4.4.0
+apache-airflow-providers-mysql==6.4.0
+pandas==2.3.3
+pydantic-settings==2.12.0

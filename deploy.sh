@@ -88,7 +88,7 @@ case $ACTION in
         docker compose restart
         echo -e "${GREEN}✓ Restarted${NC}"
         ;;
-    reload)
+    reload) # FOR EDIT .env config
         echo -e "${YELLOW}Reload and Recreate Airflow...${NC}"
         docker compose up -d --force-recreate
         echo -e "${GREEN}✓ Restarted with updated environment${NC}"
@@ -100,16 +100,7 @@ case $ACTION in
         echo -e "${BLUE}Status:${NC}"
         docker compose ps
         ;;
-    start)
-        echo -e "${YELLOW}Building image (if needed)...${NC}"
-        docker compose build
-        
-        echo -e "${GREEN}Starting Airflow...${NC}"
-        docker compose up -d
-        
-        echo -e "${GREEN}✓ Services started!${NC}"
-        ;;
-    
+
     rebuild)
         echo -e "${YELLOW}Rebuilding image from scratch...${NC}"
         docker compose build --no-cache

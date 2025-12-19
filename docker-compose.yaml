@@ -158,7 +158,8 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
-
+    volumes:
+      - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
 
   airflow-dag-processor:
     <<: *airflow-common

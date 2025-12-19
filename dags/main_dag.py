@@ -4,12 +4,21 @@ import os
 from functools import reduce
 
 import yaml
+from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 from airflow.providers.mysql.hooks.mysql import MySqlHook
 from airflow.sdk import Asset, dag, task
+
+from config.env_var import conf_settings
+from include.utilities.utils import get_conn_string, get_table_name_for_query
 
 logger = logging.getLogger(__name__)
 
 ENV = os.getenv("AIRFLOW_ENV")
+
+conn_str_data = get_conn_string(conf_settings=conf_settings)
+os.environ["AIRFLOW_CONN_SOURCE_CONN"] = conn_str_data["source_conn_str"]
+os.environ["AIRFLOW_CONN_SINK_CONN"] = conn_str_data["sink_conn_str"]
+os.environ["AIRFLOW_CONN_LOG_TABLE_CONN"] = conn_str_data["log_table_conn_str"]
 
 base_path = os.getcwd()
 tables_config_path = f"/opt/airflow/config/tables_config/tables_{ENV}.yaml"
@@ -67,16 +76,16 @@ def main_migration_dag():
             if isinstance(table_config_pull, list)
             else table_config_pull
         )
-
-        hook = MySqlHook(mysql_conn_id="source_conn")
+        table_name = get_table_name_for_query(table_conf=table_config, type="source")
+        hook = MsSqlHook(mssql_conn_id="source_conn")
         logger.info("Getting Max Updated Date From Source Table.")
-        logger.info(f"Source Table: {table_config['name']}")
+        logger.info(f"Source Table: {table_name}")
         records = hook.get_records(
-            f"SELECT MAX({table_config['updated_column']}) FROM {table_config['name']};"
+            f"SELECT MAX({table_config['updated_column']}) FROM {table_name};"
         )
         logger.info(f"Source Table Max Updated Date: {records[0][0]}")
 
-        return records
+        return records[0][0]
 
     @task
     def sink_max_update_dt(**context):
@@ -88,31 +97,32 @@ def main_migration_dag():
             if isinstance(table_config_pull, list)
             else table_config_pull
         )
-
+        table_name = get_table_name_for_query(table_conf=table_config, type="sink")
         hook = MySqlHook(mysql_conn_id="sink_conn")
         logger.info("Getting Max Updated Date From Sink Table.")
-        logger.info(f"Sink Table: {table_config['sink_table']}")
+        logger.info(f"Sink Table: {table_name}")
         records = hook.get_records(
-            f"SELECT MAX({table_config['updated_column']}) FROM {table_config['sink_table']};"
+            f"SELECT MAX({table_config['updated_column']}) FROM {table_name};"
         )
         logger.info(f"Sink Table Max Updated Date: {records[0][0]}")
-        return records
+        return records[0][0]
 
     @task
     def get_date_from_both(**context):
         source_max_update_dt_data = context["ti"].xcom_pull(
             task_ids="source_max_update_dt",
             key="return_value",
-            include_prior_dates=True,
+            include_prior_dates=False,
         )
         sink_max_update_dt_data = context["ti"].xcom_pull(
             task_ids="sink_max_update_dt",
             key="return_value",
-            include_prior_dates=True,
+            include_prior_dates=False,
         )
+        logger.info(sink_max_update_dt_data)
 
-        source_max_update_dt = source_max_update_dt_data[-1][0][0]
-        sink_max_update_dt = sink_max_update_dt_data[-1][0][0]
+        source_max_update_dt = source_max_update_dt_data
+        sink_max_update_dt = sink_max_update_dt_data
         # source_max_update_dt = (
         #     source_max_update_dt_data[-1][0][0]
         #     if (source_max_update_dt_data[-1][0][0], datetime.datetime)
@@ -132,7 +142,7 @@ def main_migration_dag():
         date_data = context["ti"].xcom_pull(
             task_ids="get_date_from_both",
             key="return_value",
-            include_prior_dates=True,
+            include_prior_dates=False,
         )
 
         source_date = (
@@ -148,9 +158,8 @@ def main_migration_dag():
         if not sink_date:
             logger.info("Sink date is None. Updating!!!")
             return "update_task"
-        if not isinstance(
-            datetime.datetime.fromisoformat(sink_date), datetime.datetime
-        ):
+        logger.info(type(sink_date))
+        if not isinstance(sink_date, datetime.datetime):
             logger.info("Sink date is not type datetime. Updating!!!")
             return "update_task"
         if source_date > sink_date:

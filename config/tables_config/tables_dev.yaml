@@ -1,12 +1,26 @@
-database:
-  connection_id: postgres_dev
-  
+
 tables:
   CTBank_Temp:
     - name: CTBank_Temp
       sink_table: CTBank_Temp
-      database_name:
+      source_database:
+      source_schema:
+      sink_database:
+      sink_schema:
       primary_key: BankId
       updated_column: UpdateDate
       airflow_asset_name: CTBank_Temp_trigger_asset
       insert_chunk_size:
+
+  ms_table:
+    - name: ms_table
+      sink_table: ms_table
+      source_database: sme
+      source_schema: dbo
+      sink_database: MIGRATE
+      sink_schema:
+      primary_key: ProductID
+      updated_column: updated_date
+      airflow_asset_name: ms_table_trigger_asset
+      insert_chunk_size:
+      

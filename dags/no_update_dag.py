@@ -1,13 +1,24 @@
 import datetime
 import importlib
 import logging
+import os
 
 from airflow.providers.mysql.hooks.mysql import MySqlHook
 from airflow.sdk import Asset, dag, task
 
 from config.env_var import conf_settings
+from include.utilities.utils import (
+    get_conn_string,
+    get_log_table_name,
+    get_table_name_for_query,
+)
 
 logger = logging.getLogger(__name__)
+
+conn_str_data = get_conn_string(conf_settings=conf_settings)
+os.environ["AIRFLOW_CONN_SOURCE_CONN"] = conn_str_data["source_conn_str"]
+os.environ["AIRFLOW_CONN_SINK_CONN"] = conn_str_data["sink_conn_str"]
+os.environ["AIRFLOW_CONN_LOG_TABLE_CONN"] = conn_str_data["log_table_conn_str"]
 
 
 @dag(dag_id="no_update", schedule=[Asset("not_update_asset")], tags=["sme"])
@@ -15,7 +26,7 @@ def no_update():
     @task
     def create_audit_table(**context):
         """Create audit table if not exists"""
-        sink_hook = MySqlHook(mysql_conn_id="sink_conn")
+        sink_hook = MySqlHook(mysql_conn_id="log_table_conn")
         sink_conn = sink_hook.get_conn()
         sink_cursor = sink_conn.cursor()
         try:
@@ -31,8 +42,9 @@ def no_update():
         except Exception as e:
             logger.error(f"Failed to create audit table: {e}")
         finally:
+            log_table_name = get_log_table_name(conf_settings=conf_settings)
             sink_cursor.execute(
-                create_table_query.format(LOG_TABLE_NAME=conf_settings.log_table_name)
+                create_table_query.format(LOG_TABLE_NAME=log_table_name)
             )
             sink_conn.commit()
             sink_cursor.close()
@@ -53,22 +65,29 @@ def no_update():
             key="execution_date",
             include_prior_dates=True,
         )[-1]
-        sink_hook = MySqlHook(mysql_conn_id="sink_conn")
+        sink_hook = MySqlHook(mysql_conn_id="log_table_conn")
         sink_conn = sink_hook.get_conn()
         sink_cursor = sink_conn.cursor()
-        insert_query = """
-        INSERT INTO migration_audit (
+
+        log_table_name = get_log_table_name(conf_settings=conf_settings)
+        insert_query = f"""
+        INSERT INTO {log_table_name} (
             dag_id, run_id, start_date, source_table, sink_table, status
         ) VALUES (%s, %s, %s, %s, %s, %s)
         """
+
+        source_table_name = get_table_name_for_query(
+            table_conf=table_config, type="source"
+        )
+        sink_table_name = get_table_name_for_query(table_conf=table_config, type="sink")
         sink_cursor.execute(
             insert_query,
             (
                 context["dag"].dag_id,
                 context["run_id"],
                 execution_date,
-                table_config["name"],
-                table_config["sink_table"],
+                source_table_name,
+                sink_table_name,
                 "NO UPDATE",
             ),
         )
@@ -94,12 +113,12 @@ def no_update():
             )
         )
         logger.info(audit_id)
-        sink_hook = MySqlHook(mysql_conn_id="sink_conn")
+        sink_hook = MySqlHook(mysql_conn_id="log_table_conn")
         sink_conn = sink_hook.get_conn()
         sink_cursor = sink_conn.cursor()
-
+        log_table_name = get_log_table_name(conf_settings=conf_settings)
         sink_cursor.execute(
-            "SELECT start_date FROM migration_audit WHERE id = %s", (audit_id,)
+            f"SELECT start_date FROM {log_table_name} WHERE id = %s", (audit_id,)
         )
 
         start_date = sink_cursor.fetchone()[0]
